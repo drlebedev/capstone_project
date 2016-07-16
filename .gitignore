@@ -1,0 +1,9 @@
+*.html
+*.md
+.Rhistory
+.Rproj.user
+exploratory_cache
+exploratory_files
+rsconnect
+/src/*.zip
+/final/en_US/*.txt

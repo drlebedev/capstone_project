@@ -1,0 +1,29 @@
+Prediction algorithm and app based on data collected by HC Corpora  
+========================================================
+author: Kirill Lebedev
+date: 07/13/2016
+
+Used resourses
+========================================================
+ - Data downloaded from **http://www.corpora.heliohost.org**: corpus includes data from twitter, blogs, news and excludes profanity languege
+- The lib for textual data analysis quanteda **https://cran.r-project.org/web/packages/quanteda/index.html** 
+- "An Empirical Study of Smoothing Techniques for Languege Modeling" by Stanley F.Chen and Joshua Googman, Center for Research in Computing Technology, Harvard University, Cambridge, Massachusetts. August, 1998.  
+
+
+Prediction algorithm 
+========================================================
+ - Creating a statistical language model which is probability distribution over sequence of words. 
+ - Building n-gram model where we make approximation that the probability of a word depends only on the idententity of the preceding words 
+ - Saving to data.table to increase the performance of the app
+ - Applying Key-Nosel smoothing - tecniques to produce more accurate probabilities which performs better for small counts 
+ - First, the algorithms tries to predict based on n words, then on n-1
+ 
+Shiny app
+========================================================
+![UI of the shiny app](myimage.png) 
+
+Shiny app manual
+========================================================
+The max number of words for prediction is two. 
+Put desirable words in the text box. Wait, until the result comes up. 
+The output contains 5 the most probable words.

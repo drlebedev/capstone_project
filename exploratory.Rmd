@@ -1,0 +1,256 @@
+---
+title: "Explaratory Analisys"
+author: "Kirill Lebedev"
+date: 'March 17, 2016'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+The goal of this document is to get brief overview of Corpora data corpus (http://www.corpora.heliohost.org/aboutcorpus.html) that is used as a source to build a word prediction model.  
+
+Corpora is publicaly available web-crawled word corpus. The corpus is separated by language. The explored corpus subset is in English and consists from blog records, news and tweets.
+
+This exporatory analisys includes data cleaning and tokenization as well as brief dataset overview and is limited to English content.
+
+2 addition datasets are used:
+
+1. US English Word dictionary from Summer Institute of Linguistics (http://www-01.sil.org/linguistics/wordlists/english/wordlist/wordsEn.txt)
+2. US ENglish offencive words dictionary from Carnegie Mellon University Luis von Ahn’s Research Group (http://www.cs.cmu.edu/~biglou/resources/bad-words.txt)
+
+## Prerequisites
+
+Following libararies are used for exploratory analysis:
+# tm - 
+
+```{r warning=FALSE, message=FALSE}
+library(tm)
+library(RWeka)
+library(wordcloud)
+library(ggplot2)
+library(scales)
+set.seed(1234)
+```
+
+## Data loading
+
+A list of inital files for analisys is the following:
+
+```{r}
+file.info(list.files("./final/en_US", full.names = TRUE))[1]
+```
+
+Let's start from initial data loading. Text files with data are more than 150Mb so we will use file connection to load data into memory:
+
+```{r warning=FALSE, cache=TRUE}
+con <- file("./final/en_US/en_US.twitter.txt", "r") 
+tweetsVector <- readLines(con)
+close(con)
+con <- file("./final/en_US/en_US.news.txt", "r") 
+newsVector <- readLines(con)
+close(con)
+con <- file("./final/en_US/en_US.blogs.txt", "r") 
+blogsVector <- readLines(con)
+close(con)
+con <- file("./src/en_US.words.txt", "r") 
+wordsVector <- readLines(con)
+close(con)
+con <- file("./src/en_US.profanity.txt", "r") 
+profanityVector <- readLines(con)
+close(con)
+```
+
+## Initial data stats
+
+Full data set is pretty big:
+
+```{r echo=FALSE, cache=TRUE}
+lines <- c(length(tweetsVector), length(newsVector), length(blogsVector))
+words <- c(
+  sum(sapply(tweetsVector, function(x) {length(strsplit(x, split = " ")[[1]])})),
+  sum(sapply(newsVector, function(x) {length(strsplit(x, split = " ")[[1]])})),
+  sum(sapply(blogsVector, function(x) {length(strsplit(x, split = " ")[[1]])}))
+)
+chars <- c(
+  sum(sapply(tweetsVector, nchar)),
+  sum(sapply(newsVector, nchar)),
+  sum(sapply(blogsVector, nchar))
+)
+```
+
+
+| Corpus | NLines | NWords | NSymbols |
+|:------:|:------:|:------:|:--------:|
+| Tweets | `r lines[1]` | `r words[1]` | `r chars[1]` |
+| News | `r lines[2]` | `r words[2]` | `r chars[2]` |
+| Blogs | `r lines[3]` | `r words[3]` | `r chars[3]` |
+| Corpus total | `r sum(lines)` | `r sum(words)` | `r sum(chars)` |
+
+As we see total corpus is reaaly big. Total number of words is more than 100M. We will use only 5% of randomly sampled data for analysis.
+
+## Data sampling
+
+```{r echo=FALSE}
+sampleSize <- 0.005
+```
+
+We will use tm library to convert loaded data into corpus. Initially we will sample `r 100*sampleSize`% of data:
+
+```{r, cache=TRUE}
+sampledTweets <- sample(tweetsVector, length(tweetsVector) * sampleSize)
+sampledNews <- sample(newsVector, length(newsVector) * sampleSize)
+sampledBlogs <- sample(blogsVector, length(blogsVector) * sampleSize)
+corpus <- VCorpus(VectorSource(c(sampledTweets, sampledNews, sampledBlogs)))
+```
+
+Lets check basic sampled corpus stats:
+
+```{r echo=FALSE, cache=TRUE}
+lines <- c(length(sampledTweets), length(sampledNews), length(sampledBlogs))
+words <- c(
+  sum(sapply(sampledTweets, function(x) {length(strsplit(x, split = " ")[[1]])})),
+  sum(sapply(sampledNews, function(x) {length(strsplit(x, split = " ")[[1]])})),
+  sum(sapply(sampledBlogs, function(x) {length(strsplit(x, split = " ")[[1]])}))
+)
+chars <- c(
+  sum(sapply(sampledTweets, nchar)),
+  sum(sapply(sampledNews, nchar)),
+  sum(sapply(sampledBlogs, nchar))
+)
+```
+
+| Corpus | NLines | NWords | NSymbols |
+|:------:|:------:|:------:|:--------:|
+| Tweets | `r lines[1]` | `r words[1]` | `r chars[1]` |
+| News | `r lines[2]` | `r words[2]` | `r chars[2]` |
+| Blogs | `r lines[3]` | `r words[3]` | `r chars[3]` |
+| Corpus total | `r sum(lines)` | `r sum(words)` | `r sum(chars)` |
+
+As we see data set is significally reduced to the size we can analyze on regular hardware.
+
+## Corpus cleaning
+
+Original corpus is web-crawled and consist of lots of wrong-spelled words, non-existing words and other data we do not nned for next word prediction. 
+The following filtering will be applied:
+
+* Remove punctiontion
+* Remove profane words from social media
+* Remove digits
+* Remove non-english words
+
+```{r cache=TRUE}
+corpus <- tm_map(corpus, content_transformer(function(x) iconv(x, from="latin1", to="ASCII", sub="")))
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation, preserve_intra_word_dashes = TRUE)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, removeWords, profanityVector)
+corpus <- tm_map(corpus, stripWhitespace)
+```
+
+## Word statistics
+
+We can do some word frequency analysis using Term Document Matrix part of tm package.
+
+```{r cache=TRUE}
+options(mc.cores=1) 
+tdm <- TermDocumentMatrix(corpus, control=list(tokenize =  RWeka::WordTokenizer, 
+                                              wordLengths = c(1, Inf)))
+tdm  
+```
+
+As we see we got a really sparse matrix. Lets see 20 most common words in it:
+
+```{r}
+head(sort(slam::row_sums(tdm), decreasing=TRUE),20)
+```
+
+We can see that most of the words found are stop words. Let's try to remove stop-words from matrix:
+
+```{r cache=TRUE}
+tdmWS <- TermDocumentMatrix(corpus, control=list(tokenize = RWeka::WordTokenizer, 
+                                              wordLengths = c(1, Inf),
+                                              stopwords = stopwords("english")))
+tdmWS  
+head(sort(slam::row_sums(tdmWS), decreasing=TRUE),20)
+```
+
+Lets see the resulted frequency matricies as word clouds:
+
+```{r warning=FALSE}
+v <- sort(slam::row_sums(tdm[findFreqTerms(tdm,1),]), decreasing=TRUE)[1:100]
+wordcloud(names(v), v, scale = c(5,2), colors = brewer.pal(8, "Accent"))
+v <- sort(slam::row_sums(tdmWS[findFreqTerms(tdmWS,1),]), decreasing=TRUE)[1:100]
+wordcloud(names(v), v, scale = c(5,2), colors = brewer.pal(8, "Accent"))
+```
+
+Let see how frequency changes for top 10 words with stop words removed:
+
+```{r}
+v <- sort(slam::row_sums(tdmWS[findFreqTerms(tdmWS,1),]), decreasing=TRUE)[1:100]
+ggplot(data = data.frame(names=factor(names(v[1:10]), levels = names(v[1:10])), frequencies = v[1:10]), aes(x = names, y = frequencies, fill=names)) + geom_bar(stat = "identity") 
+```
+
+As we can see that frequency decreaces with almost linear rate, which actually correlates with Zipf’s law (http://en.wikipedia.org/wiki/Zipf%27s_law)
+
+Now lets check how many most common word is required to cover the language:
+
+```{r}
+v <- sort(slam::row_sums(tdmWS[findFreqTerms(tdmWS,1),]), decreasing=TRUE)
+ggplot(data = data.frame(frequencies = cumsum(v / sum(v)), pos = c(1:length(v))), aes(x = pos, y = frequencies, color="Freq")) + geom_step(stat="ecdf")  + scale_x_continuous(trans = log1p_trans()) + xlab("Number of words") + ylab("Coverage")
+```
+
+As we see we need about 26000 words to cover 50% of provided documents and about 50000 words to cover 90% of provided language. 
+
+## NGram analisys
+
+We will start from generating bigrams and trigrams:
+
+```{r cache=TRUE}
+bigramTokenizer  <- function(x) RWeka::NGramTokenizer(x, RWeka::Weka_control(min = 2, max = 2))
+trigramTokenizer <- function(x) RWeka::NGramTokenizer(x, RWeka::Weka_control(min = 3, max = 3))
+
+ngrams <- list( 
+  "2gram"=TermDocumentMatrix(corpus, control=list(tokenize = bigramTokenizer, 
+                                                  wordLengths=c(1, Inf))), 
+  "3gram"=TermDocumentMatrix(corpus, control=list(tokenize = trigramTokenizer, 
+                                                  wordLengths=c(1, Inf))) 
+)
+```
+
+Most popular 2grams are the following:
+
+```{r}
+head(sort(slam::row_sums(ngrams$`2gram`), decreasing=TRUE),20)
+```
+
+Most popular 3grams are the following:
+
+```{r}
+head(sort(slam::row_sums(ngrams$`3gram`), decreasing=TRUE),20)
+```
+
+Lets build wordcloud for most popular 2grams and 3grams
+
+```{r warning=FALSE}
+v <- sort(slam::row_sums(ngrams$`2gram`[findFreqTerms(ngrams$`2gram`,1),]), decreasing=TRUE)[1:100]
+wordcloud(names(v), v, scale = c(5,2), colors = brewer.pal(8, "Accent"))
+v <- sort(slam::row_sums(ngrams$`3gram`[findFreqTerms(ngrams$`3gram`,1),]), decreasing=TRUE)[1:100]
+wordcloud(names(v), v, scale = c(5,2), colors = brewer.pal(8, "Accent"))
+```
+
+Next we will check that Zipf's law stands for 2grams and 3grams
+
+```{r}
+v <- sort(slam::row_sums(ngrams$`2gram`[findFreqTerms(ngrams$`2gram`,1),]), decreasing=TRUE)
+ggplot(data=data.frame(words=v, rnk = rank(-v))) + geom_line(aes(x=rnk, y=words, colour="red")) + scale_x_log10() + scale_y_log10() + stat_smooth(method="lm", linetype = 2, aes(x=rnk, y=words)) +ggtitle("Zipf's law probability for 2grams") +xlab("Rank") + ylab("Probability Mass")
+v <- sort(slam::row_sums(ngrams$`3gram`[findFreqTerms(ngrams$`3gram`,1),]), decreasing=TRUE)
+ggplot(data=data.frame(words=v, rnk = rank(-v))) + geom_line(aes(x=rnk, y=words, colour="red")) + scale_x_log10() + scale_y_log10() + stat_smooth(method="lm", linetype = 2, aes(x=rnk, y=words)) +ggtitle("Zipf's law probability for 3grams") +xlab("Rank") + ylab("Probability Mass")
+```
+
+##Conclusion
+
+Provided corpora corpus has a good size, but limited hardware power does not allow to use the whole corpus to build prediction model. I plan to use 1 to 5% of the corpus to build word prediction model for the project.
