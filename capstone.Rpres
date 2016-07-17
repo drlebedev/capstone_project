@@ -12,18 +12,36 @@ Used resourses
 
 Prediction algorithm 
 ========================================================
- - Creating a statistical language model which is probability distribution over sequence of words. 
- - Building n-gram model where we make approximation that the probability of a word depends only on the idententity of the preceding words 
- - Saving to data.table to increase the performance of the app
- - Applying Key-Nosel smoothing - tecniques to produce more accurate probabilities which performs better for small counts 
- - First, the algorithms tries to predict based on n words, then on n-1
+ - Corpus is filtred for profanity and sampled (2% of sentences)
+ - NGrams are generated with quanteda package
+ - NGrams frequency distribution is calculated
+ - Kneser-Ney smoothing applied for unigrams, bigrams and tri-grams
+ 
+ Model stats:
+ ```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ source("model.R")
+ model <- load.model()
+ ```
+ - Unigrams: `r length(model$ngram1$word)`
+ - Bigrams: `r length(model$ngram2$word)`
+ - Trigrams: `r length(model$ngram3$word)`
  
 Shiny app
 ========================================================
-![UI of the shiny app](myimage.png) 
+![UI of the shiny app](img/ui.png) 
 
 Shiny app manual
 ========================================================
-The max number of words for prediction is two. 
-Put desirable words in the text box. Wait, until the result comes up. 
-The output contains 5 the most probable words.
+ 
+## Steps to predict words 
+
+ - Open in browser: https://drlebedev.shinyapps.io/capstone/
+ - Enter initial text for prediction into input box
+ - Check the predict words on right panel
+
+## Limitations
+
+ - Model is based on trigram Kneser-Ney smoothing and generates prediction based on 2 previous words in phrase
+ - Real-time update performance depends on network connection
+ - Aplication initial load could take several seconds
+ 

@@ -167,7 +167,6 @@ load.model <- function() {
   if (exists("model")) {
     model 
   } else {
-    print("Loading model")
     if (!file.exists("model/model.RData")) {
       stop("Model not found")
     }
